@@ -4,6 +4,7 @@
 
   const DB_NAME = 'mise-recipes';
   const DB_STORE = 'recipes';
+  const DB_SHOPPING = 'shopping';
   const CATEGORIES = ['Primi', 'Secondi', 'Antipasti', 'Contorni', 'Dolci', 'Colazione', 'Pane e lievitati', 'Salse e condimenti', 'Bevande', 'Altro'];
   const UNITS = ['', 'g', 'kg', 'ml', 'l', 'cucchiaio', 'cucchiaino', 'pz', 'spicchio', 'fetta', 'tazza', 'q.b.'];
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -16,7 +17,7 @@
   const minutes = recipe => (Number(recipe.prep) || 0) + (Number(recipe.cook) || 0);
   const duration = n => !n ? 'Tempo libero' : n >= 60 ? `${Math.floor(n/60)} h${n%60 ? ` ${n%60} min` : ''}` : `${n} min`;
   const formatNumber = number => Number.isInteger(number) ? String(number) : Number(number.toFixed(2)).toLocaleString('it-IT',{maximumFractionDigits:2});
-  const state = {recipes:[],view:'all',category:'Tutte',query:'',sort:'newest',editingId:null,photo:'',detailId:null,servings:2,checked:new Set()};
+  const state = {recipes:[],shopping:[],view:'all',category:'Tutte',query:'',sort:'newest',editingId:null,photo:'',detailId:null,servings:2,checked:new Set(),choices:new Map()};
   let database = null;
   let fallback = false;
   let toastTimer;
@@ -26,18 +27,21 @@
       if (!('indexedDB' in window)) { fallback = true; return; }
       try {
         database = await new Promise((resolve,reject) => {
-          const req = indexedDB.open(DB_NAME, 1);
-          req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(DB_STORE)) req.result.createObjectStore(DB_STORE,{keyPath:'id'}); };
+          const req = indexedDB.open(DB_NAME, 2);
+          req.onupgradeneeded = () => {
+            if (!req.result.objectStoreNames.contains(DB_STORE)) req.result.createObjectStore(DB_STORE,{keyPath:'id'});
+            if (!req.result.objectStoreNames.contains(DB_SHOPPING)) req.result.createObjectStore(DB_SHOPPING,{keyPath:'id'});
+          };
           req.onsuccess = () => resolve(req.result);
           req.onerror = () => reject(req.error);
           req.onblocked = () => reject(new Error('Archivio temporaneamente occupato'));
         });
       } catch (e) { console.warn('IndexedDB unavailable:', e); fallback = true; }
     },
-    transaction(mode, action) {
+    transaction(mode, action, storeName=DB_STORE) {
       return new Promise((resolve,reject) => {
-        const tx = database.transaction(DB_STORE, mode);
-        const request = action(tx.objectStore(DB_STORE));
+        const tx = database.transaction(storeName, mode);
+        const request = action(tx.objectStore(storeName));
         let result;
         request.onsuccess = () => { result = request.result; };
         tx.oncomplete = () => resolve(result);
@@ -67,6 +71,26 @@
         tx.onerror = () => reject(tx.error);
         tx.onabort = () => reject(tx.error);
       });
+    },
+    async shoppingAll() {
+      if (fallback) { try { return JSON.parse(localStorage.getItem('mise-shopping-v1') || '[]'); } catch { return []; } }
+      return this.transaction('readonly', os => os.getAll(),DB_SHOPPING);
+    },
+    async shoppingBulkPut(items) {
+      if (!items.length) return;
+      if (fallback) { const map=new Map((await this.shoppingAll()).map(i=>[i.id,i]));items.forEach(i=>map.set(i.id,i));localStorage.setItem('mise-shopping-v1',JSON.stringify([...map.values()]));return; }
+      await new Promise((resolve,reject)=>{
+        const tx=database.transaction(DB_SHOPPING,'readwrite');const os=tx.objectStore(DB_SHOPPING);
+        items.forEach(i=>os.put(i));tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
+      });
+    },
+    async shoppingRemove(ids) {
+      if (!ids.length) return;
+      if (fallback) { localStorage.setItem('mise-shopping-v1',JSON.stringify((await this.shoppingAll()).filter(i=>!ids.includes(i.id))));return; }
+      await new Promise((resolve,reject)=>{
+        const tx=database.transaction(DB_SHOPPING,'readwrite');const os=tx.objectStore(DB_SHOPPING);
+        ids.forEach(itemId=>os.delete(itemId));tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
+      });
     }
   };
 
@@ -94,16 +118,20 @@
   function setView(view) {
     state.view = view; state.category = 'Tutte';
     $$('[data-view]').forEach(b => b.classList.toggle('is-active', b.dataset.view === view));
-    $('#topbar-section').textContent = view === 'favorites' ? 'PREFERITE' : 'TUTTE LE RICETTE';
+    $('#topbar-section').textContent = view === 'shopping' ? 'LISTA DELLA SPESA' : view === 'favorites' ? 'PREFERITE' : 'TUTTE LE RICETTE';
     $('#collection-title').childNodes[0].textContent = view === 'favorites' ? 'Le preferite ' : 'Le mie ricette ';
+    $('#hero-section').hidden = view === 'shopping';
+    $('.collection').hidden = view === 'shopping';
+    $('#shopping-section').hidden = view !== 'shopping';
     render();
-    if (window.innerWidth < 800) $('.collection').scrollIntoView({behavior:'smooth',block:'start'});
+    if (window.innerWidth < 800) (view === 'shopping' ? $('#shopping-section') : $('.collection')).scrollIntoView({behavior:'smooth',block:'start'});
   }
   function render() {
     const recipes = displayRecipes();
     const favorites = state.recipes.filter(r => r.favorite).length;
     $('#nav-all-count').textContent = state.recipes.length;
     $('#nav-fav-count').textContent = favorites;
+    $('#nav-shop-count').textContent = state.shopping.filter(i=>!i.checked).length;
     $('#recipe-count').textContent = String(recipes.length).padStart(2,'0');
     const available = state.recipes.filter(r => state.view !== 'favorites' || r.favorite);
     const categories = ['Tutte',...CATEGORIES.filter(cat => available.some(r => r.category === cat))];
@@ -120,6 +148,15 @@
       $('#empty-description').textContent = allEmpty ? 'Aggiungi la prima ricetta. Bastano un nome, qualche ingrediente e un pizzico di voglia di cucinare.' : noFavorites ? 'Tocca il cuore su una ricetta per ritrovarla subito qui.' : 'Prova a cambiare le parole cercate o a scegliere un’altra categoria.';
       $('#empty-add').innerHTML = `${icon('plus')} ${allEmpty ? 'Scrivi la prima ricetta':'Aggiungi una ricetta'} ${icon('arrow')}`;
     }
+    renderShopping();
+  }
+  function renderShopping() {
+    const pending=state.shopping.filter(i=>!i.checked), done=state.shopping.filter(i=>i.checked);
+    $('#shopping-summary').textContent = `${pending.length} ${pending.length===1?'prodotto da comprare':'prodotti da comprare'}${done.length?` · ${done.length} acquistati`:''}`;
+    $('#shopping-clear-done').hidden=!done.length;
+    $('#shopping-empty').hidden=!!state.shopping.length;
+    const group=(title,items)=>items.length?`<section class="shopping-group"><h3>${title} <span>${String(items.length).padStart(2,'0')}</span></h3>${items.map(item=>`<div class="shopping-item ${item.checked?'is-done':''}"><label class="shopping-item-main"><input type="checkbox" data-shop-check="${attr(item.id)}" ${item.checked?'checked':''}><span class="shopping-item-name">${escapeHTML(item.name)}${item.source?`<small>Da ${escapeHTML(item.source)}</small>`:''}</span></label><span class="shopping-item-amount">${escapeHTML([item.qty,item.unit].filter(Boolean).join(' ')||'—')}</span><button type="button" class="row-remove" data-shop-remove="${attr(item.id)}" aria-label="Rimuovi ${attr(item.name)}">${icon('close')}</button></div>`).join('')}</section>`:'';
+    $('#shopping-list').innerHTML=group('Da comprare',pending)+group('Acquistati',done);
   }
   function recipeCard(recipe) {
     const photo = safePhoto(recipe.photo);
@@ -131,13 +168,26 @@
     </article>`;
   }
 
+  function unitOptions(chosen='') { return [...new Set([...UNITS,chosen])].map(unit=>`<option value="${attr(unit)}" ${unit===chosen?'selected':''}>${escapeHTML(unit||'—')}</option>`).join(''); }
+  function alternativeRow(item={}) {
+    return `<div class="alternative-row"><span class="alternative-label">oppure</span><div class="ingredient-row"><input class="row-control alt-qty" aria-label="Quantità alternativa" placeholder="Qtà" value="${attr(item.qty||'')}" inputmode="decimal"><select class="row-control alt-unit" aria-label="Unità alternativa">${unitOptions(item.unit||'')}</select><input class="row-control alt-name" aria-label="Ingrediente alternativo" placeholder="Alternativa" maxlength="200" value="${attr(item.name||'')}"><button type="button" class="row-remove" data-remove-alternative aria-label="Rimuovi alternativa">${icon('close')}</button></div></div>`;
+  }
   function ingredientRow(ingredient={}) {
-    return `<div class="ingredient-row"><input class="row-control ingredient-qty" aria-label="Quantità" placeholder="Qtà" value="${attr(ingredient.qty || '')}" inputmode="decimal"><select class="row-control ingredient-unit" aria-label="Unità di misura">${[...new Set([...UNITS,ingredient.unit||''])].map(unit => `<option value="${attr(unit)}" ${unit===ingredient.unit?'selected':''}>${escapeHTML(unit || '—')}</option>`).join('')}</select><input class="row-control ingredient-name" aria-label="Nome ingrediente" placeholder="Ingrediente" value="${attr(ingredient.name||'')}" maxlength="200"><button type="button" class="row-remove" data-remove-row aria-label="Rimuovi ingrediente">${icon('close')}</button></div>`;
+    return `<div class="ingredient-block"><div class="ingredient-row"><input class="row-control ingredient-qty" aria-label="Quantità" placeholder="Qtà" value="${attr(ingredient.qty||'')}" inputmode="decimal"><select class="row-control ingredient-unit" aria-label="Unità di misura">${unitOptions(ingredient.unit||'')}</select><input class="row-control ingredient-name" aria-label="Nome ingrediente" placeholder="Ingrediente" value="${attr(ingredient.name||'')}" maxlength="200"><button type="button" class="row-remove" data-remove-ingredient aria-label="Rimuovi ingrediente">${icon('close')}</button></div><div class="alternative-rows">${(ingredient.alternatives||[]).map(alternativeRow).join('')}</div><button type="button" class="add-alternative" data-add-alternative>${icon('plus')} Alternativa</button></div>`;
   }
   function stepRow(text='') {
     return `<div class="step-row"><span class="row-index">1</span><textarea class="row-control step-textarea" aria-label="Passaggio" rows="2" placeholder="Descrivi questo passaggio..." maxlength="5000">${escapeHTML(text)}</textarea><button type="button" class="row-remove" data-remove-row aria-label="Rimuovi passaggio">${icon('close')}</button></div>`;
   }
-  function renumberSteps() { $$('.step-row .row-index').forEach((el,index) => { el.textContent = String(index+1).padStart(2,'0'); }); }
+  function prepSectionRow(section={title:'',parallel:false,steps:['']}) {
+    const steps=section.steps?.length?section.steps:[''];
+    return `<div class="prep-section"><div class="prep-section-top"><span class="prep-section-number">FASE 01</span><button type="button" class="row-remove" data-remove-section aria-label="Rimuovi sezione">${icon('close')}</button></div><input class="row-control prep-section-name" aria-label="Nome della sezione" placeholder="Es. Marinatura, salsa, cottura..." maxlength="150" value="${attr(section.title||'')}"><label class="prep-parallel-label"><input type="checkbox" class="prep-parallel" ${section.parallel?'checked':''}> Da preparare nel frattempo</label><div class="section-step-rows dynamic-rows">${steps.map(stepRow).join('')}</div><button type="button" class="add-row-button add-bottom section-add-step" data-add-section-step>${icon('plus')} Aggiungi passaggio</button></div>`;
+  }
+  function renumberSteps() {
+    $$('.prep-section').forEach((section,i)=>{
+      $('.prep-section-number',section).textContent=`FASE ${String(i+1).padStart(2,'0')}`;
+      $$('.row-index',section).forEach((el,j)=>{el.textContent=String(j+1).padStart(2,'0');});
+    });
+  }
   function setPhoto(data) {
     state.photo = safePhoto(data);
     $('#photo-preview').innerHTML = state.photo ? `<img src="${attr(state.photo)}" alt="Anteprima foto ricetta">` : `<div class="photo-placeholder">${icon('image')}<span>Una foto rende tutto più buono</span><small>JPG, PNG o WebP · fino a 12 MB</small></div>`;
@@ -161,7 +211,8 @@
     $('#recipe-notes').value = data.notes || '';
     $('#recipe-favorite').checked = !!data.favorite;
     $('#ingredient-rows').innerHTML = (data.ingredients?.length ? data.ingredients : [{},{},{}]).map(ingredientRow).join('');
-    $('#step-rows').innerHTML = (data.steps?.length ? data.steps : ['']).map(stepRow).join('');
+    const sections=data.sections?.length?data.sections:[{title:'Preparazione',parallel:false,steps:data.steps?.length?data.steps:['']}];
+    $('#prep-sections').innerHTML=sections.map(prepSectionRow).join('');
     renumberSteps(); setPhoto(data.photo || '');
     openDialog('#editor-dialog');
     setTimeout(() => $('#recipe-title').focus({preventScroll:true}),120);
@@ -180,7 +231,10 @@
     } finally { URL.revokeObjectURL(objectUrl); }
   }
   function readIngredientRows() {
-    return $$('.ingredient-row').map(row=>({qty:$('.ingredient-qty',row).value.trim(),unit:$('.ingredient-unit',row).value,name:$('.ingredient-name',row).value.trim()})).filter(r => r.name);
+    return $$('.ingredient-block').map(block=>({qty:$('.ingredient-qty',block).value.trim(),unit:$('.ingredient-unit',block).value,name:$('.ingredient-name',block).value.trim(),alternatives:$$('.alternative-row',block).map(row=>({qty:$('.alt-qty',row).value.trim(),unit:$('.alt-unit',row).value,name:$('.alt-name',row).value.trim()})).filter(item=>item.name)})).filter(item=>item.name);
+  }
+  function readSections(){
+    return $$('.prep-section').map(block=>({title:$('.prep-section-name',block).value.trim()||'Preparazione',parallel:$('.prep-parallel',block).checked,steps:$$('.step-textarea',block).map(el=>el.value.trim()).filter(Boolean)})).filter(section=>section.steps.length);
   }
   async function saveRecipe(event) {
     event.preventDefault();
@@ -188,12 +242,13 @@
     if (!title) { $('#recipe-title').focus(); return; }
     const old = state.editingId ? getRecipe(state.editingId) : null;
     const now = new Date().toISOString();
+    const sections=readSections();
     const recipe = {
       id:old?.id || id(),createdAt:old?.createdAt || now,updatedAt:now,
       title,description:$('#recipe-description').value.trim(),category:$('#recipe-category').value,
       difficulty:$('#recipe-difficulty').value,prep:Math.max(0,Number($('#recipe-prep').value)||0),cook:Math.max(0,Number($('#recipe-cook').value)||0),
       servings:Math.max(1,Number($('#recipe-servings').value)||2),
-      ingredients:readIngredientRows(),steps:$$('.step-textarea').map(el=>el.value.trim()).filter(Boolean),
+      ingredients:readIngredientRows(),sections,steps:sections.flatMap(section=>section.steps),
       tags:[...new Set($('#recipe-tags').value.split(',').map(t=>t.trim()).filter(Boolean))],notes:$('#recipe-notes').value.trim(),favorite:$('#recipe-favorite').checked,photo:state.photo
     };
     const button=$('#save-recipe');button.disabled=true;
@@ -201,7 +256,7 @@
     catch(e){ console.error(e);toast('Salvataggio non riuscito. Prova a esportare un backup o liberare spazio sul dispositivo.'); }
     finally{button.disabled=false;}
   }
-  async function refresh(){state.recipes=await store.all();render();}
+  async function refresh(){[state.recipes,state.shopping]=await Promise.all([store.all(),store.shoppingAll()]);render();}
   async function toggleFavorite(recipeId){
     const recipe=getRecipe(recipeId);if(!recipe)return;
     try{await store.put({...recipe,favorite:!recipe.favorite,updatedAt:new Date().toISOString()});await refresh();if(state.detailId===recipeId&&$('#detail-dialog').open)renderDetail();}
@@ -216,22 +271,61 @@
     if(!Number.isFinite(n))return raw;
     return formatNumber(n*ratio);
   }
+  function recipeSections(recipe){
+    return recipe.sections?.length?recipe.sections:[{title:'Preparazione',parallel:false,steps:recipe.steps||[]}];
+  }
+  function chosenIngredient(ingredient,index){
+    const options=[ingredient,...(ingredient.alternatives||[])];
+    return options[state.choices.get(index)||0]||ingredient;
+  }
+  async function addShoppingItems(items,source=''){
+    const changed=[];
+    const working=[...state.shopping];
+    for(const ingredient of items){
+      if(!ingredient?.name?.trim())continue;
+      const name=ingredient.name.trim(),qty=String(ingredient.qty||'').trim(),unit=ingredient.unit||'';
+      const existing=working.find(i=>!i.checked&&normalized(i.name)===normalized(name)&&normalized(i.unit)===normalized(unit));
+      const parse=n=>/^\d+(?:[.,]\d+)?$/.test(n)?Number(n.replace(',','.')):null;
+      const a=existing?parse(String(existing.qty)):null,b=parse(qty);
+      if(existing&&a!==null&&b!==null){
+        const updated={...existing,qty:formatNumber(a+b),source:existing.source===source?source:'Più ricette'};
+        working[working.indexOf(existing)]=updated;changed.push(updated);
+      }else{
+        const item={id:id(),name,qty,unit,source,checked:false,createdAt:new Date().toISOString()};working.push(item);changed.push(item);
+      }
+    }
+    if(!changed.length){toast('Nessun ingrediente da aggiungere');return;}
+    try{await store.shoppingBulkPut(changed);state.shopping=await store.shoppingAll();render();toast(`${items.length===1?'Ingrediente aggiunto':'Ingredienti aggiunti'} alla lista della spesa`);}
+    catch(e){console.error(e);toast('Impossibile salvare la lista della spesa');}
+  }
+  async function addRecipeIngredients(index=null){
+    const recipe=getRecipe(state.detailId);if(!recipe)return;
+    const ratio=state.servings/(Number(recipe.servings)||2);
+    const list=(recipe.ingredients||[]).map((main,i)=>{
+      const item=chosenIngredient(main,i);
+      return {...item,qty:scaledQuantity(item.qty,ratio)};
+    });
+    await addShoppingItems(index===null?list:[list[index]],recipe.title);
+  }
   function renderDetail(){
     const recipe=getRecipe(state.detailId);if(!recipe){closeDialog($('#detail-dialog'));return;}
     const ratio=state.servings/(Number(recipe.servings)||2);
     const photo=safePhoto(recipe.photo);
     const ingredients=(recipe.ingredients||[]).map((ingredient,index)=>{
-      const amount=[scaledQuantity(ingredient.qty,ratio),ingredient.unit].filter(Boolean).join(' ');
-      return `<li class="${state.checked.has(index)?'checked':''}"><input type="checkbox" data-check-ingredient="${index}" aria-label="Spunta ${attr(ingredient.name)}" ${state.checked.has(index)?'checked':''}><span>${amount?`<strong>${escapeHTML(amount)}</strong> · `:''}${escapeHTML(ingredient.name)}</span></li>`;
+      const selected=chosenIngredient(ingredient,index);
+      const amount=[scaledQuantity(selected.qty,ratio),selected.unit].filter(Boolean).join(' ');
+      const alternatives=ingredient.alternatives||[];
+      const choice=alternatives.length?`<select class="detail-alternative-select" data-choice-ingredient="${index}" aria-label="Scegli alternativa per ${attr(ingredient.name)}"><option value="0" ${(state.choices.get(index)||0)===0?'selected':''}>Principale: ${escapeHTML(ingredient.name)}</option>${alternatives.map((item,j)=>`<option value="${j+1}" ${(state.choices.get(index)||0)===j+1?'selected':''}>Oppure: ${escapeHTML(item.name)}</option>`).join('')}</select>`:'';
+      return `<li class="detail-ingredient ${state.checked.has(index)?'checked':''}"><div class="detail-ingredient-line"><input type="checkbox" data-check-ingredient="${index}" aria-label="Spunta ${attr(selected.name)}" ${state.checked.has(index)?'checked':''}><span class="detail-ingredient-text">${amount?`<strong>${escapeHTML(amount)}</strong> · `:''}${escapeHTML(selected.name)}</span><button type="button" class="ingredient-to-shop" data-shop-ingredient="${index}" aria-label="Aggiungi ${attr(selected.name)} alla spesa" title="Aggiungi alla spesa">${icon('cart')}${icon('plus')}</button></div>${choice}</li>`;
     }).join('') || '<li><span>Non hai ancora inserito ingredienti.</span></li>';
-    const steps=(recipe.steps||[]).map((step,index)=>`<li><span class="step-num">${String(index+1).padStart(2,'0')}</span><span class="step-copy">${escapeHTML(step)}</span></li>`).join('') || '<li><span class="step-copy">Nessun passaggio inserito.</span></li>';
+    const steps=recipeSections(recipe).map((section,sIndex)=>`<div class="detail-prep-section"><div class="detail-prep-heading"><h4>${escapeHTML(section.title||`Fase ${sIndex+1}`)}</h4>${section.parallel?'<span class="parallel-badge">NEL FRATTEMPO</span>':''}</div><ol class="steps-list">${(section.steps||[]).map((step,index)=>`<li><span class="step-num">${String(index+1).padStart(2,'0')}</span><span class="step-copy">${escapeHTML(step)}</span></li>`).join('')}</ol></div>`).join('') || '<p>Nessun passaggio inserito.</p>';
     $('#detail-content').innerHTML=`<div class="detail-top"><div class="detail-cover">${photo?`<img src="${attr(photo)}" alt="${attr(recipe.title)}">`:'<span>m.</span>'}</div><div class="detail-intro"><div class="detail-category">${escapeHTML(recipe.category||'Altro')} · ${escapeHTML(recipe.difficulty||'Facile')}</div><h2 id="detail-title">${escapeHTML(recipe.title)}</h2><p>${escapeHTML(recipe.description||'Una ricetta del tuo ricettario personale.')}</p><div class="detail-meta"><span>${icon('clock')} ${duration(minutes(recipe))}</span><span>${icon('users')} ${Number(recipe.servings)||2} porzioni</span></div></div><button class="icon-button detail-close" data-detail-action="close" aria-label="Chiudi">${icon('close')}</button></div>
     <div class="detail-toolbar"><button class="detail-fav ${recipe.favorite?'active':''}" data-detail-action="favorite">${icon('heart')} <span>${recipe.favorite?'Preferita':'Preferiti'}</span></button><button data-detail-action="edit">${icon('edit')} Modifica</button><button data-detail-action="print">${icon('print')} Stampa</button><span class="detail-spacer"></span><button class="danger" data-detail-action="delete">${icon('trash')} Elimina</button></div>
-    <div class="detail-body"><section><h3>Ingredienti</h3><div class="servings-control"><span>Adatta le quantità</span><div class="servings-stepper"><button data-servings="-1" aria-label="Diminuisci porzioni">−</button><strong>${state.servings}</strong><button data-servings="1" aria-label="Aumenta porzioni">+</button></div></div><ul class="ingredients-list">${ingredients}</ul></section><section><h3>Preparazione</h3><ol class="steps-list">${steps}</ol>${recipe.notes?`<div class="detail-notes"><h4>Un piccolo appunto</h4><p>${escapeHTML(recipe.notes)}</p></div>`:''}${recipe.tags?.length?`<div class="detail-tags">${recipe.tags.map(tag=>`<span class="detail-tag"># ${escapeHTML(tag)}</span>`).join('')}</div>`:''}</section></div>`;
+    <div class="detail-body"><section><h3>Ingredienti</h3><div class="servings-control"><span>Adatta le quantità</span><div class="servings-stepper"><button data-servings="-1" aria-label="Diminuisci porzioni">−</button><strong>${state.servings}</strong><button data-servings="1" aria-label="Aumenta porzioni">+</button></div></div><button type="button" class="shop-all-button" data-detail-action="add-all">${icon('cart')} Aggiungi tutti alla spesa</button><ul class="ingredients-list">${ingredients}</ul></section><section><h3>Preparazione</h3>${steps}${recipe.notes?`<div class="detail-notes"><h4>Un piccolo appunto</h4><p>${escapeHTML(recipe.notes)}</p></div>`:''}${recipe.tags?.length?`<div class="detail-tags">${recipe.tags.map(tag=>`<span class="detail-tag"># ${escapeHTML(tag)}</span>`).join('')}</div>`:''}</section></div>`;
   }
   function openDetail(recipeId){
     const recipe=getRecipe(recipeId);if(!recipe)return;
-    state.detailId=recipeId;state.servings=Number(recipe.servings)||2;state.checked=new Set();renderDetail();openDialog('#detail-dialog');
+    state.detailId=recipeId;state.servings=Number(recipe.servings)||2;state.checked=new Set();state.choices=new Map();renderDetail();openDialog('#detail-dialog');
   }
   async function deleteRecipe(){
     const recipe=getRecipe(state.detailId);if(!recipe)return;
@@ -241,7 +335,7 @@
   }
   async function exportBackup(){
     try{
-      const archive={application:'mise',version:1,exportedAt:new Date().toISOString(),recipes:await store.all()};
+      const archive={application:'mise',version:1,exportedAt:new Date().toISOString(),recipes:await store.all(),shopping:await store.shoppingAll()};
       const blob=new Blob([JSON.stringify(archive,null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob);const a=document.createElement('a');
       a.href=url;a.download=`mise-ricettario-${new Date().toISOString().slice(0,10)}.json`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),20000);
@@ -251,19 +345,24 @@
   function validateImport(data){
     if(!data || data.application!=='mise' || data.version!==1 || !Array.isArray(data.recipes))throw new Error('Questo file non è un backup Mise valido.');
     if(data.recipes.length>2000)throw new Error('Il backup contiene troppe ricette.');
-    return data.recipes.map(r=>{
+    const cleanIngredient=i=>({qty:String(i?.qty||'').slice(0,50),unit:String(i?.unit||'').slice(0,40),name:String(i?.name||'').slice(0,200)});
+    const recipes=data.recipes.map(r=>{
       if(!r || typeof r.id!=='string'||r.id.length>150||typeof r.title!=='string'||!r.title.trim())throw new Error('Il backup contiene una ricetta non valida.');
-      return {id:r.id,title:r.title.slice(0,130),description:String(r.description||'').slice(0,1000),category:CATEGORIES.includes(r.category)?r.category:'Altro',difficulty:['Facile','Media','Impegnativa'].includes(r.difficulty)?r.difficulty:'Facile',prep:Math.max(0,Number(r.prep)||0),cook:Math.max(0,Number(r.cook)||0),servings:Math.max(1,Number(r.servings)||2),ingredients:Array.isArray(r.ingredients)?r.ingredients.slice(0,200).map(i=>({qty:String(i.qty||'').slice(0,50),unit:String(i.unit||'').slice(0,40),name:String(i.name||'').slice(0,200)})):[],steps:Array.isArray(r.steps)?r.steps.slice(0,100).map(s=>String(s).slice(0,5000)):[],tags:Array.isArray(r.tags)?r.tags.slice(0,80).map(t=>String(t).slice(0,60)):[],notes:String(r.notes||'').slice(0,20000),photo:safePhoto(r.photo),favorite:!!r.favorite,createdAt:r.createdAt||new Date().toISOString(),updatedAt:r.updatedAt||new Date().toISOString()};
+      return {id:r.id,title:r.title.slice(0,130),description:String(r.description||'').slice(0,1000),category:CATEGORIES.includes(r.category)?r.category:'Altro',difficulty:['Facile','Media','Impegnativa'].includes(r.difficulty)?r.difficulty:'Facile',prep:Math.max(0,Number(r.prep)||0),cook:Math.max(0,Number(r.cook)||0),servings:Math.max(1,Number(r.servings)||2),ingredients:Array.isArray(r.ingredients)?r.ingredients.slice(0,200).map(i=>({...cleanIngredient(i),alternatives:Array.isArray(i?.alternatives)?i.alternatives.slice(0,20).map(cleanIngredient):[]})):[],steps:Array.isArray(r.steps)?r.steps.slice(0,100).map(s=>String(s).slice(0,5000)):[],sections:Array.isArray(r.sections)?r.sections.slice(0,40).map(s=>({title:String(s?.title||'Preparazione').slice(0,150),parallel:!!s?.parallel,steps:Array.isArray(s?.steps)?s.steps.slice(0,100).map(step=>String(step).slice(0,5000)):[]})):[],tags:Array.isArray(r.tags)?r.tags.slice(0,80).map(t=>String(t).slice(0,60)):[],notes:String(r.notes||'').slice(0,20000),photo:safePhoto(r.photo),favorite:!!r.favorite,createdAt:r.createdAt||new Date().toISOString(),updatedAt:r.updatedAt||new Date().toISOString()};
     });
+    if(data.shopping!==undefined&&!Array.isArray(data.shopping))throw new Error('La lista della spesa nel backup non è valida.');
+    if((data.shopping||[]).length>4000)throw new Error('Il backup contiene troppi prodotti.');
+    const shopping=(data.shopping||[]).filter(i=>i&&typeof i.name==='string'&&i.name.trim()).map(i=>({id:typeof i.id==='string'&&i.id.length<150?i.id:id(),name:i.name.slice(0,200),qty:String(i.qty||'').slice(0,50),unit:String(i.unit||'').slice(0,40),source:String(i.source||'').slice(0,130),checked:!!i.checked,createdAt:i.createdAt||new Date().toISOString()}));
+    return {recipes,shopping};
   }
   async function importBackup(file){
     if(!file)return;
     if(file.size>90*1024*1024){toast('Il file è troppo grande (massimo 90 MB).');return;}
     try{
       const data=JSON.parse(await file.text());const records=validateImport(data);
-      if(!records.length){toast('Il backup non contiene ricette');return;}
-      if(!window.confirm(`Importare ${records.length} ricette? Quelle con lo stesso identificativo saranno aggiornate; le altre rimarranno.`))return;
-      await store.import(records);await refresh();closeDialog($('#settings-dialog'));toast(`${records.length} ricette importate con successo`);
+      if(!records.recipes.length&&!records.shopping.length){toast('Il backup è vuoto');return;}
+      if(!window.confirm(`Importare ${records.recipes.length} ricette e ${records.shopping.length} prodotti della spesa? Le voci con lo stesso identificativo saranno aggiornate.`))return;
+      await store.import(records.recipes);await store.shoppingBulkPut(records.shopping);await refresh();closeDialog($('#settings-dialog'));toast('Backup importato con successo');
     }catch(e){console.error(e);toast(e instanceof SyntaxError?'Il file JSON non è leggibile':e.message||'Importazione non riuscita');}
     finally{$('#backup-file').value='';}
   }
@@ -287,21 +386,59 @@
       dialog.addEventListener('close',()=>document.body.classList.remove('dialog-open'));
     });
     $('#add-ingredient').addEventListener('click',()=>{ $('#ingredient-rows').insertAdjacentHTML('beforeend',ingredientRow());$$('.ingredient-name').at(-1)?.focus(); });
-    $('#add-step').addEventListener('click',()=>{$('#step-rows').insertAdjacentHTML('beforeend',stepRow());renumberSteps();$$('.step-textarea').at(-1)?.focus();});
-    $('#recipe-form').addEventListener('click',event=>{const button=event.target.closest('[data-remove-row]');if(button){button.parentElement.remove();renumberSteps();}});
+    $('#add-prep-section').addEventListener('click',()=>{$('#prep-sections').insertAdjacentHTML('beforeend',prepSectionRow({title:'',parallel:false,steps:['']}));renumberSteps();$$('.prep-section-name').at(-1)?.focus();});
+    $('#recipe-form').addEventListener('click',event=>{
+      const alt=event.target.closest('[data-add-alternative]');
+      if(alt){const block=alt.closest('.ingredient-block');$('.alternative-rows',block).insertAdjacentHTML('beforeend',alternativeRow());$$('.alt-name',block).at(-1)?.focus();return;}
+      const step=event.target.closest('[data-add-section-step]');
+      if(step){const section=step.closest('.prep-section');$('.section-step-rows',section).insertAdjacentHTML('beforeend',stepRow());renumberSteps();$$('.step-textarea',section).at(-1)?.focus();return;}
+      const removeAlt=event.target.closest('[data-remove-alternative]');if(removeAlt){removeAlt.closest('.alternative-row').remove();return;}
+      const removeIngredient=event.target.closest('[data-remove-ingredient]');if(removeIngredient){removeIngredient.closest('.ingredient-block').remove();return;}
+      const removeSection=event.target.closest('[data-remove-section]');if(removeSection){removeSection.closest('.prep-section').remove();renumberSteps();return;}
+      const removeStep=event.target.closest('[data-remove-row]');if(removeStep){removeStep.closest('.step-row').remove();renumberSteps();}
+    });
     $('#recipe-form').addEventListener('submit',saveRecipe);
     $('#recipe-photo').addEventListener('change',async event=>{const file=event.target.files?.[0];if(!file)return;try{setPhoto(await imageToDataURL(file));}catch(e){toast(e.message);}});
     $('#remove-photo').addEventListener('click',()=>setPhoto(''));
     $('#detail-content').addEventListener('click',async event=>{
       const servingButton=event.target.closest('[data-servings]');if(servingButton){state.servings=Math.min(1000,Math.max(1,state.servings+Number(servingButton.dataset.servings)));renderDetail();return;}
+      const shoppingButton=event.target.closest('[data-shop-ingredient]');if(shoppingButton){await addRecipeIngredients(Number(shoppingButton.dataset.shopIngredient));return;}
       const action=event.target.closest('[data-detail-action]')?.dataset.detailAction;
       if(action==='close')closeDialog($('#detail-dialog'));
       if(action==='favorite')await toggleFavorite(state.detailId);
       if(action==='edit'){const recipe=getRecipe(state.detailId);closeDialog($('#detail-dialog'));openEditor(recipe);}
       if(action==='print')window.print();
+      if(action==='add-all')await addRecipeIngredients();
       if(action==='delete')await deleteRecipe();
     });
-    $('#detail-content').addEventListener('change',event=>{const checkbox=event.target.closest('[data-check-ingredient]');if(!checkbox)return;const index=Number(checkbox.dataset.checkIngredient);if(checkbox.checked)state.checked.add(index);else state.checked.delete(index);checkbox.closest('li').classList.toggle('checked',checkbox.checked);});
+    $('#detail-content').addEventListener('change',event=>{
+      const choice=event.target.closest('[data-choice-ingredient]');if(choice){state.choices.set(Number(choice.dataset.choiceIngredient),Number(choice.value));renderDetail();return;}
+      const checkbox=event.target.closest('[data-check-ingredient]');if(!checkbox)return;
+      const index=Number(checkbox.dataset.checkIngredient);if(checkbox.checked)state.checked.add(index);else state.checked.delete(index);checkbox.closest('li').classList.toggle('checked',checkbox.checked);
+    });
+    $('#shopping-add-form').addEventListener('submit',async event=>{
+      event.preventDefault();const name=$('#shopping-name').value.trim();if(!name)return;
+      await addShoppingItems([{name,qty:$('#shopping-qty').value.trim(),unit:$('#shopping-unit').value}]);
+      $('#shopping-add-form').reset();$('#shopping-name').focus();
+    });
+    $('#shopping-browse').addEventListener('click',()=>setView('all'));
+    $('#shopping-list').addEventListener('change',async event=>{
+      const checkbox=event.target.closest('[data-shop-check]');if(!checkbox)return;
+      const item=state.shopping.find(i=>i.id===checkbox.dataset.shopCheck);if(!item)return;
+      try{await store.shoppingBulkPut([{...item,checked:checkbox.checked}]);state.shopping=await store.shoppingAll();render();}
+      catch(e){console.error(e);toast('Impossibile aggiornare il prodotto');}
+    });
+    $('#shopping-list').addEventListener('click',async event=>{
+      const button=event.target.closest('[data-shop-remove]');if(!button)return;
+      try{await store.shoppingRemove([button.dataset.shopRemove]);state.shopping=await store.shoppingAll();render();}
+      catch(e){console.error(e);toast('Impossibile rimuovere il prodotto');}
+    });
+    $('#shopping-clear-done').addEventListener('click',async()=>{
+      const ids=state.shopping.filter(i=>i.checked).map(i=>i.id);if(!ids.length)return;
+      if(!window.confirm(`Rimuovere ${ids.length} prodotti già acquistati dalla lista?`))return;
+      try{await store.shoppingRemove(ids);state.shopping=await store.shoppingAll();render();toast('Prodotti acquistati rimossi');}
+      catch(e){console.error(e);toast('Impossibile aggiornare la lista');}
+    });
     $('#export-data').addEventListener('click',exportBackup);
     $('#import-data').addEventListener('click',()=>$('#backup-file').click());
     $('#backup-file').addEventListener('change',event=>importBackup(event.target.files?.[0]));
