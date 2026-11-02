@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f7f7f2" />
+  <meta name="description" content="Mise, il tuo ricettario personale e privato." />
+  <title>Mise — Il mio ricettario</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./style.css" />
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M20.2 8.6c0 4.5-8.2 10-8.2 10s-8.2-5.5-8.2-10a4.6 4.6 0 0 1 8.2-2.8 4.6 4.6 0 0 1 8.2 2.8Z"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5m6 6-6-6 6-6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M5 5 19 19M19 5 5 19"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6.5V12l4 2.5"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M2.5 19a6.5 6.5 0 0 1 13 0M16 5.5a3 3 0 0 1 0 5.8M18 13.5a5 5 0 0 1 3.5 5.5"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2" fill="#f7f7f2"/><circle cx="16" cy="17" r="2" fill="#f7f7f2"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15.5V20h16v-4.5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v13m-5-5 5 5 5-5M4 16.5V21h16v-4.5"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="m4 20 4.5-1 11-11a2.2 2.2 0 0 0-3.1-3.1l-11 11L4 20Z"/><path d="m14.5 6.5 3 3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 6.5h15m-13-3h11m-11 3 1 14h9l1-14M10 10v7m4-7v7"/></symbol>
+    <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 8V3h10v5M7 17H4V9h16v8h-3M7 14h10v7H7z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m4.5 12.5 5 5 10-11"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m4 18 5-5 3 3 3-5 5 7"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="wordmark" href="#" id="logo-link" aria-label="Mise, tutte le ricette">mise<span>.</span></a>
+      <div class="side-label">IL TUO SPAZIO</div>
+      <nav class="primary-nav" aria-label="Navigazione">
+        <button class="nav-link is-active" data-view="all"><svg><use href="#i-grid" /></svg><span>Tutte le ricette</span><span class="nav-count" id="nav-all-count">0</span></button>
+        <button class="nav-link" data-view="favorites"><svg><use href="#i-heart" /></svg><span>Preferite</span><span class="nav-count" id="nav-fav-count">0</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="small-ornament">✳</div>
+        <p>Le tue ricette, tutte<br />in un unico posto.</p>
+        <button class="sidebar-settings" id="open-settings"><svg><use href="#i-settings" /></svg> Archivio e backup</button>
+        <div class="privacy-indicator"><span></span> Dati salvati su questo dispositivo</div>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div class="topbar-label">IL MIO RICETTARIO <span class="topbar-sep">/</span> <span id="topbar-section">TUTTE LE RICETTE</span></div>
+        <div class="topbar-right"><span class="topbar-date" id="today-date"></span><button class="text-settings" id="open-settings-mobile" aria-label="Archivio e backup"><svg><use href="#i-settings" /></svg></button></div>
+      </header>
+
+      <div class="content-wrap">
+        <section class="hero" aria-labelledby="hero-title">
+          <div class="hero-copy">
+            <div class="eyebrow"><span class="eyebrow-line"></span> YOUR PERSONAL RECIPE BOOK</div>
+            <h1 id="hero-title">Un posto per<br /><em>ogni sapore.</em></h1>
+            <p>Le ricette che ami, quelle da provare, quelle da non dimenticare. Tutto qui, tutto tuo.</p>
+            <button class="button-primary hero-button" id="hero-add"><svg><use href="#i-plus" /></svg> Nuova ricetta <svg class="button-arrow"><use href="#i-arrow" /></svg></button>
+          </div>
+          <div class="hero-art" aria-hidden="true">
+            <div class="art-topline"><span>PERSONAL COLLECTION</span><span>EST. 2026</span></div>
+            <div class="plate-art"><div class="plate-outer"><div class="plate-inner"><span>m<span class="plate-period">.</span></span></div></div><span class="plate-fork">✳</span></div>
+            <div class="art-bottomline"><span>made with care</span><span>01 — ∞</span></div>
+          </div>
+        </section>
+
+        <section class="collection" aria-labelledby="collection-title">
+          <div class="collection-heading"><div><div class="eyebrow section-eyebrow">LA COLLEZIONE</div><h2 id="collection-title">Le mie ricette <span id="recipe-count" class="heading-count">00</span></h2></div><button class="button-outline desktop-add" id="collection-add"><svg><use href="#i-plus" /></svg> Aggiungi ricetta</button></div>
+          <div class="toolbar">
+            <div class="search-field"><svg><use href="#i-search" /></svg><input id="search-input" type="search" placeholder="Cerca una ricetta o un ingrediente..." aria-label="Cerca ricette" autocomplete="off" /></div>
+            <select id="sort-select" class="sort-select" aria-label="Ordina ricette"><option value="newest">Più recenti</option><option value="name">Nome A–Z</option><option value="oldest">Meno recenti</option><option value="time">Tempo di preparazione</option></select>
+          </div>
+          <div id="category-filters" class="category-filters" aria-label="Filtra per categoria"></div>
+          <div id="recipe-grid" class="recipe-grid" aria-live="polite"></div>
+          <div id="empty-state" class="empty-state" hidden>
+            <div class="empty-art"><div class="empty-circle"><span>✳</span></div></div>
+            <span class="empty-kicker" id="empty-kicker">UNA PAGINA BIANCA, MILLE IDEE</span>
+            <h3 id="empty-title">La tua storia in cucina<br /><em>inizia qui.</em></h3>
+            <p id="empty-description">Aggiungi la prima ricetta. Bastano un nome, qualche ingrediente e un pizzico di voglia di cucinare.</p>
+            <button class="button-primary" id="empty-add"><svg><use href="#i-plus" /></svg> Scrivi la prima ricetta <svg class="button-arrow"><use href="#i-arrow" /></svg></button>
+          </div>
+        </section>
+        <footer class="page-footer"><span>MISE © 2026</span><span>CUCINARE · RICORDARE · RIPETERE</span><span>FATTO CON CURA ♡</span></footer>
+      </div>
+    </main>
+  </div>
+
+  <nav class="mobile-nav" aria-label="Navigazione mobile"><button class="mobile-nav-link is-active" data-view="all"><svg><use href="#i-grid" /></svg><span>Ricette</span></button><button class="mobile-nav-link" data-view="favorites"><svg><use href="#i-heart" /></svg><span>Preferite</span></button><button class="mobile-nav-link" id="mobile-add"><svg><use href="#i-plus" /></svg><span>Nuova</span></button></nav>
+
+  <dialog id="editor-dialog" class="panel-dialog editor-dialog" aria-labelledby="editor-title">
+    <div class="dialog-header"><div><div class="eyebrow">IL TUO RICETTARIO</div><h2 id="editor-title">Nuova <em>ricetta.</em></h2></div><button type="button" class="icon-button close-dialog" data-close="editor-dialog" aria-label="Chiudi"><svg><use href="#i-close" /></svg></button></div>
+    <form id="recipe-form">
+      <div class="form-body">
+        <div class="editor-photo" id="photo-preview"><div class="photo-placeholder"><svg><use href="#i-image" /></svg><span>Una foto rende tutto più buono</span><small>JPG, PNG o WebP · fino a 12 MB</small></div></div>
+        <div class="photo-actions"><label class="upload-button" for="recipe-photo"><svg><use href="#i-upload" /></svg> Aggiungi foto</label><button type="button" class="subtle-button" id="remove-photo" hidden>Rimuovi foto</button><input type="file" id="recipe-photo" accept="image/png,image/jpeg,image/webp" hidden /></div>
+        <div class="field full-width"><label for="recipe-title">Nome della ricetta <span>*</span></label><input id="recipe-title" name="title" required maxlength="130" placeholder="Es. Costine al miele e birra" /></div>
+        <div class="field full-width"><label for="recipe-description">Una breve descrizione</label><textarea id="recipe-description" name="description" rows="2" maxlength="1000" placeholder="Il segreto di questa ricetta, perché ti piace..." ></textarea></div>
+        <div class="form-grid cols-2"><div class="field"><label for="recipe-category">Categoria</label><select id="recipe-category" name="category"><option>Primi</option><option>Secondi</option><option>Antipasti</option><option>Contorni</option><option>Dolci</option><option>Colazione</option><option>Pane e lievitati</option><option>Salse e condimenti</option><option>Bevande</option><option>Altro</option></select></div><div class="field"><label for="recipe-difficulty">Difficoltà</label><select id="recipe-difficulty" name="difficulty"><option>Facile</option><option>Media</option><option>Impegnativa</option></select></div></div>
+        <div class="form-grid cols-3"><div class="field"><label for="recipe-prep">Prep. (min)</label><input type="number" min="0" max="9999" id="recipe-prep" name="prep" placeholder="15" /></div><div class="field"><label for="recipe-cook">Cottura (min)</label><input type="number" min="0" max="9999" id="recipe-cook" name="cook" placeholder="30" /></div><div class="field"><label for="recipe-servings">Porzioni</label><input type="number" min="1" max="1000" id="recipe-servings" name="servings" value="2" required /></div></div>
+        <div class="form-section"><div class="form-section-heading"><div><span class="section-index">01</span><h3>Ingredienti</h3></div><button type="button" class="add-row-button" id="add-ingredient"><svg><use href="#i-plus" /></svg> Aggiungi</button></div><p class="form-hint">Inserisci quantità, unità e ingrediente. Le dosi si adatteranno alle porzioni.</p><div id="ingredient-rows" class="dynamic-rows"></div></div>
+        <div class="form-section"><div class="form-section-heading"><div><span class="section-index">02</span><h3>Preparazione</h3></div><button type="button" class="add-row-button" id="add-step"><svg><use href="#i-plus" /></svg> Aggiungi</button></div><div id="step-rows" class="dynamic-rows"></div></div>
+        <div class="form-section last-section"><div class="form-section-heading"><div><span class="section-index">03</span><h3>Dettagli personali</h3></div></div><div class="field"><label for="recipe-tags">Etichette <span class="optional">(separate da virgola)</span></label><input id="recipe-tags" name="tags" placeholder="Es. Domenica, Da rifare, Comfort food" /></div><div class="field"><label for="recipe-notes">Note e piccoli trucchi</label><textarea id="recipe-notes" name="notes" rows="3" placeholder="Varianti, consigli, ricordi..."></textarea></div><label class="checkbox-row"><input type="checkbox" id="recipe-favorite" name="favorite" /><span>♡ &nbsp; Aggiungi alle preferite</span></label></div>
+      </div>
+      <div class="dialog-footer"><button type="button" class="button-outline" data-close="editor-dialog">Annulla</button><button type="submit" class="button-primary" id="save-recipe">Salva ricetta <svg class="button-arrow"><use href="#i-arrow" /></svg></button></div>
+    </form>
+  </dialog>
+
+  <dialog id="detail-dialog" class="panel-dialog detail-dialog" aria-labelledby="detail-title"><div id="detail-content"></div></dialog>
+
+  <dialog id="settings-dialog" class="panel-dialog settings-dialog" aria-labelledby="settings-title"><div class="dialog-header"><div><div class="eyebrow">IL TUO ARCHIVIO</div><h2 id="settings-title">Sempre <em>con te.</em></h2></div><button type="button" class="icon-button close-dialog" data-close="settings-dialog" aria-label="Chiudi"><svg><use href="#i-close" /></svg></button></div><div class="settings-body"><div class="privacy-card"><span class="privacy-lock">✳</span><div><h3>Privato, per davvero.</h3><p>Le ricette e le foto vengono salvate esclusivamente nel browser di questo dispositivo, non su un server. Nessun account, nessuna condivisione automatica.</p></div></div><h3 class="settings-subhead">Il tuo backup</h3><p class="settings-copy">Esporta periodicamente una copia del ricettario. Se cambi iPhone, browser o cancelli i dati del sito, puoi ripristinarla importando il file.</p><button class="settings-action" id="export-data"><span class="action-icon"><svg><use href="#i-download" /></svg></span><span><strong>Esporta ricettario</strong><small>Scarica ricette e fotografie in un file JSON</small></span><svg class="action-arrow"><use href="#i-arrow" /></svg></button><button class="settings-action" id="import-data"><span class="action-icon"><svg><use href="#i-upload" /></svg></span><span><strong>Importa ricettario</strong><small>Aggiungi ricette da un backup precedente</small></span><svg class="action-arrow"><use href="#i-arrow" /></svg></button><input type="file" id="backup-file" accept="application/json,.json" hidden /><p class="settings-note">Nota: l'archivio locale non è condiviso tra telefono e computer. L'importazione unisce le ricette e aggiorna quelle con lo stesso ID.</p></div></dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
