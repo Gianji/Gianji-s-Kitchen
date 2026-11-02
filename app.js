@@ -343,26 +343,87 @@
     }catch(e){console.error(e);toast('Non è stato possibile esportare il ricettario');}
   }
   function validateImport(data){
-    if(!data || data.application!=='mise' || data.version!==1 || !Array.isArray(data.recipes))throw new Error('Questo file non è un backup Mise valido.');
-    if(data.recipes.length>2000)throw new Error('Il backup contiene troppe ricette.');
-    const cleanIngredient=i=>({qty:String(i?.qty||'').slice(0,50),unit:String(i?.unit||'').slice(0,40),name:String(i?.name||'').slice(0,200)});
-    const recipes=data.recipes.map(r=>{
-      if(!r || typeof r.id!=='string'||r.id.length>150||typeof r.title!=='string'||!r.title.trim())throw new Error('Il backup contiene una ricetta non valida.');
-      return {id:r.id,title:r.title.slice(0,130),description:String(r.description||'').slice(0,1000),category:CATEGORIES.includes(r.category)?r.category:'Altro',difficulty:['Facile','Media','Impegnativa'].includes(r.difficulty)?r.difficulty:'Facile',prep:Math.max(0,Number(r.prep)||0),cook:Math.max(0,Number(r.cook)||0),servings:Math.max(1,Number(r.servings)||2),ingredients:Array.isArray(r.ingredients)?r.ingredients.slice(0,200).map(i=>({...cleanIngredient(i),alternatives:Array.isArray(i?.alternatives)?i.alternatives.slice(0,20).map(cleanIngredient):[]})):[],steps:Array.isArray(r.steps)?r.steps.slice(0,100).map(s=>String(s).slice(0,5000)):[],sections:Array.isArray(r.sections)?r.sections.slice(0,40).map(s=>({title:String(s?.title||'Preparazione').slice(0,150),parallel:!!s?.parallel,steps:Array.isArray(s?.steps)?s.steps.slice(0,100).map(step=>String(step).slice(0,5000)):[]})):[],tags:Array.isArray(r.tags)?r.tags.slice(0,80).map(t=>String(t).slice(0,60)):[],notes:String(r.notes||'').slice(0,20000),photo:safePhoto(r.photo),favorite:!!r.favorite,createdAt:r.createdAt||new Date().toISOString(),updatedAt:r.updatedAt||new Date().toISOString()};
+    if(!data || typeof data!=='object')throw new Error('Il JSON non contiene ricette valide.');
+    if(data.application==='mise' && data.version!==1)throw new Error('Questa versione del backup Mise non è supportata.');
+
+    let rawRecipes,rawShopping=[];
+    if(Array.isArray(data))rawRecipes=data;
+    else if(Array.isArray(data.recipes)||Array.isArray(data.ricette)){
+      rawRecipes=data.recipes||data.ricette;
+      rawShopping=data.shopping??[];
+    }else if(data.recipe||data.ricetta)rawRecipes=[data.recipe||data.ricetta];
+    else if(typeof(data.title??data.titolo??data.nome)==='string')rawRecipes=[data];
+    else throw new Error('JSON non riconosciuto: serve una ricetta o un elenco di ricette.');
+    if(rawRecipes.length>2000)throw new Error('Il file contiene troppe ricette.');
+    if(!Array.isArray(rawShopping)||rawShopping.length>4000)throw new Error('La lista della spesa nel file non è valida.');
+
+    const cleanIngredient=value=>{
+      const i=typeof value==='string'?{name:value}:value;
+      return {qty:String(i?.qty??i?.quantita??i?.quantità??'').slice(0,50),unit:String(i?.unit??i?.unita??i?.unità??'').slice(0,40),name:String(i?.name??i?.nome??i?.ingrediente??'').slice(0,200)};
+    };
+    const cleanSteps=value=>{
+      const items=Array.isArray(value)?value:typeof value==='string'?value.split(/\n+/).filter(Boolean):[];
+      return items.slice(0,100).map(item=>String(typeof item==='object'&&item!==null?(item.text??item.testo??item.descrizione??item.description??''):item).trim().slice(0,5000)).filter(Boolean);
+    };
+    const recipes=rawRecipes.map(r=>{
+      const title=r?.title??r?.titolo??r?.nome;
+      if(!r||typeof r!=='object'||typeof title!=='string'||!title.trim())throw new Error('Una ricetta non ha un titolo valido.');
+      const rawSections=r.sections??r.fasi??r.sezioni;
+      const sections=Array.isArray(rawSections)?rawSections.slice(0,40).map(s=>({title:String(s?.title??s?.titolo??'Preparazione').slice(0,150),parallel:!!(s?.parallel??s?.inParallelo??s?.nelFrattempo),steps:cleanSteps(s?.steps??s?.passaggi??s?.preparazione)})):[];
+      const rawIngredients=r.ingredients??r.ingredienti;
+      const steps=sections.length?sections.flatMap(s=>s.steps):cleanSteps(r.steps??r.passaggi??r.procedimento??r.preparazione);
+      const rawTags=r.tags??r.etichette;
+      const category=r.category??r.categoria;
+      const difficulty=r.difficulty??r.difficolta??r.difficoltà;
+      return {
+        id:typeof r.id==='string'&&r.id.length<=150&&r.id?r.id:id(),
+        title:title.trim().slice(0,130),description:String(r.description??r.descrizione??'').slice(0,1000),
+        category:CATEGORIES.includes(category)?category:'Altro',difficulty:['Facile','Media','Impegnativa'].includes(difficulty)?difficulty:'Facile',
+        prep:Math.max(0,Number(r.prep??r.tempoPreparazione??r.tempo_preparazione)||0),
+        cook:Math.max(0,Number(r.cook??r.tempoCottura??r.tempo_cottura)||0),
+        servings:Math.max(1,Number(r.servings??r.porzioni)||2),
+        ingredients:Array.isArray(rawIngredients)?rawIngredients.slice(0,200).map(i=>({...cleanIngredient(i),alternatives:Array.isArray(i?.alternatives??i?.alternative)?(i.alternatives??i.alternative).slice(0,20).map(cleanIngredient):[]})):[],
+        steps,sections,tags:Array.isArray(rawTags)?rawTags.slice(0,80).map(t=>String(t).slice(0,60)):[],
+        notes:String(r.notes??r.note??'').slice(0,20000),photo:safePhoto(r.photo),favorite:!!r.favorite,
+        createdAt:r.createdAt||new Date().toISOString(),updatedAt:r.updatedAt||new Date().toISOString()
+      };
     });
-    if(data.shopping!==undefined&&!Array.isArray(data.shopping))throw new Error('La lista della spesa nel backup non è valida.');
-    if((data.shopping||[]).length>4000)throw new Error('Il backup contiene troppi prodotti.');
-    const shopping=(data.shopping||[]).filter(i=>i&&typeof i.name==='string'&&i.name.trim()).map(i=>({id:typeof i.id==='string'&&i.id.length<150?i.id:id(),name:i.name.slice(0,200),qty:String(i.qty||'').slice(0,50),unit:String(i.unit||'').slice(0,40),source:String(i.source||'').slice(0,130),checked:!!i.checked,createdAt:i.createdAt||new Date().toISOString()}));
+    const shopping=rawShopping.filter(i=>i&&typeof i.name==='string'&&i.name.trim()).map(i=>({id:typeof i.id==='string'&&i.id.length<150?i.id:id(),name:i.name.slice(0,200),qty:String(i.qty||'').slice(0,50),unit:String(i.unit||'').slice(0,40),source:String(i.source||'').slice(0,130),checked:!!i.checked,createdAt:i.createdAt||new Date().toISOString()}));
     return {recipes,shopping};
+  }
+  function importSignature(recipe){
+    const sections=Array.isArray(recipe.sections)&&recipe.sections.length?recipe.sections:null;
+    return JSON.stringify({title:normalized(recipe.title).trim(),description:recipe.description||'',category:recipe.category||'',difficulty:recipe.difficulty||'',prep:recipe.prep||0,cook:recipe.cook||0,servings:recipe.servings||2,ingredients:recipe.ingredients||[],steps:sections||recipe.steps||[],tags:recipe.tags||[],notes:recipe.notes||'',photo:recipe.photo||''});
+  }
+  function preserveExisting(imported,current,signature){
+    const identifiers=new Set(current.map(item=>item.id));
+    const signatures=new Set(current.map(signature));
+    let skipped=0;
+    const additions=[];
+    for(const item of imported){
+      const fingerprint=signature(item);
+      if(signatures.has(fingerprint)){skipped++;continue;}
+      const next={...item};
+      while(identifiers.has(next.id))next.id=id();
+      identifiers.add(next.id);signatures.add(fingerprint);additions.push(next);
+    }
+    return {additions,skipped};
   }
   async function importBackup(file){
     if(!file)return;
     if(file.size>90*1024*1024){toast('Il file è troppo grande (massimo 90 MB).');return;}
     try{
       const data=JSON.parse(await file.text());const records=validateImport(data);
-      if(!records.recipes.length&&!records.shopping.length){toast('Il backup è vuoto');return;}
-      if(!window.confirm(`Importare ${records.recipes.length} ricette e ${records.shopping.length} prodotti della spesa? Le voci con lo stesso identificativo saranno aggiornate.`))return;
-      await store.import(records.recipes);await store.shoppingBulkPut(records.shopping);await refresh();closeDialog($('#settings-dialog'));toast('Backup importato con successo');
+      if(!records.recipes.length&&!records.shopping.length){toast('Il file è vuoto');return;}
+      const currentRecipes=await store.all(),currentShopping=await store.shoppingAll();
+      const recipeMerge=preserveExisting(records.recipes,currentRecipes,importSignature);
+      const shoppingMerge=preserveExisting(records.shopping,currentShopping,item=>JSON.stringify([normalized(item.name),item.qty,item.unit,item.source,item.checked]));
+      if(!recipeMerge.additions.length&&!shoppingMerge.additions.length){toast('Tutto già presente: nessuna ricetta sostituita');return;}
+      const parts=[`${recipeMerge.additions.length} ricette`,`${shoppingMerge.additions.length} prodotti della spesa`];
+      const duplicates=recipeMerge.skipped+shoppingMerge.skipped;
+      if(!window.confirm(`Aggiungere ${parts.join(' e ')} al tuo archivio?${duplicates?`\n${duplicates} elementi già presenti saranno ignorati.`:''}\nLe ricette e i prodotti attuali non verranno modificati.`))return;
+      await store.import(recipeMerge.additions);await store.shoppingBulkPut(shoppingMerge.additions);
+      await refresh();closeDialog($('#settings-dialog'));toast(`${recipeMerge.additions.length} ricette aggiunte, senza sovrascritture`);
     }catch(e){console.error(e);toast(e instanceof SyntaxError?'Il file JSON non è leggibile':e.message||'Importazione non riuscita');}
     finally{$('#backup-file').value='';}
   }
