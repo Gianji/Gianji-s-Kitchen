@@ -1,21 +1,31 @@
 # Gianji's Kitchen — Mise
 
-Ricettario personale minimalista, sviluppato in HTML, CSS e JavaScript senza dipendenze di build.
+Ricettario personale, sviluppato in HTML, CSS e JavaScript. Funziona come sito statico, senza account, login, backend o dipendenze da piattaforme di creazione del sito.
 
 ## Funzioni
 
 - Creazione, modifica ed eliminazione delle ricette
-- Foto, ingredienti, passaggi, note, categorie e preferiti
+- Foto, ingredienti alternativi, sezioni di preparazione, note, categorie e preferiti
 - Ricerca per nome e ingrediente
 - Ricalcolo delle quantità in base alle porzioni
+- Lista della spesa
 - Esportazione e importazione di backup JSON
 
 ## Dati e privacy
 
-Le ricette vengono salvate **solo nel browser** tramite IndexedDB (con fallback a localStorage). Non sono inviate a GitHub o a un database online e non si sincronizzano automaticamente tra dispositivi. Esporta periodicamente un backup da **Archivio e backup**.
+Le ricette e la lista della spesa sono salvate **solo sul dispositivo e nel browser in uso** tramite IndexedDB (con fallback a localStorage). Non vengono caricate su GitHub né condivise tra utenti o dispositivi.
 
-## Avvio
+Ogni visitatore può utilizzare il proprio ricettario senza registrarsi. La navigazione privata, la cancellazione dei dati del sito o il cambio di browser/dispositivo possono far perdere l'archivio locale: è consigliato esportare periodicamente un backup JSON da **Archivio e backup**.
 
-Apri `index.html` oppure ospita i tre file (`index.html`, `style.css`, `app.js`) su un host statico. L'hosting attuale è privato e separato da questo repository: [Mise](https://mise-ricette-gianji-261102.flutedgrass.chatgpt.site).
+Se si passa a un nuovo indirizzo web, i dati memorizzati sotto il vecchio indirizzo **non vengono trasferiti automaticamente**: esportare il backup dal vecchio sito e importarlo nel nuovo.
 
-**Attenzione:** rendere pubblico il repository o abilitare GitHub Pages può esporre il codice o il sito. Questo repository è pensato per restare privato. Gli aggiornamenti pubblicati su ChatGPT Sites non vengono trasferiti automaticamente qui.
+## Pubblicazione con GitHub Pages
+
+Il sito utilizza `index.html` nella radice del ramo `main` e percorsi relativi per CSS e JavaScript, quindi può essere pubblicato direttamente con GitHub Pages:
+
+1. Rendere pubblico il repository nelle impostazioni GitHub.
+2. In **Settings → Pages**, scegliere **Deploy from a branch**.
+3. Selezionare **main**, cartella **/(root)**, e salvare.
+4. Aprire `https://gianji.github.io/Gianji-s-Kitchen/` dopo la pubblicazione.
+
+Il sito pubblicato è visitabile da chiunque abbia il link, senza effettuare login a GitHub o ad altri servizi.
