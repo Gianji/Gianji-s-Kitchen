@@ -354,6 +354,8 @@
   function openDetail(recipeId){
     const recipe=getRecipe(recipeId);if(!recipe)return;
     state.detailId=recipeId;state.servings=Number(recipe.servings)||2;state.checked=new Set();state.choices=new Map();renderDetail();openDialog('#detail-dialog');
+    // Safari iOS può conservare uno scroll orizzontale del dialog precedente.
+    $('#detail-dialog').scrollLeft=0;
   }
   async function deleteRecipe(){
     const recipe=getRecipe(state.detailId);if(!recipe)return;

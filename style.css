@@ -22,3 +22,42 @@ dialog{border:0;padding:0;box-shadow:0 22px 90px rgba(18,27,18,.22);background:v
 .settings-action-danger:hover{border-color:#b45c4d;background:#fff0ec}
 .settings-risk-copy{font-size:11px;line-height:1.65;color:#935e57;margin:0 0 4px}
 .detail-toolbar{flex-wrap:wrap}
+
+/* iPhone / Safari: il dialog a tutto schermo deve restare ancorato al viewport.
+   Il contenuto lungo (in particolare i select delle alternative) non deve
+   creare uno scorrimento orizzontale che taglia il lato sinistro della scheda. */
+@media screen and (max-width:560px){
+  html,body{max-width:100%;overflow-x:clip}
+  dialog.panel-dialog:modal{
+    position:fixed!important;
+    inset:0!important;
+    margin:0!important;
+    padding:0!important;
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+    height:100dvh!important;
+    max-height:100dvh!important;
+    transform:none!important;
+    overflow-x:hidden;
+    overflow-y:auto;
+    overscroll-behavior-x:none;
+    touch-action:pan-y;
+  }
+  .detail-dialog #detail-content,
+  .detail-dialog .detail-top,
+  .detail-dialog .detail-intro,
+  .detail-dialog .detail-body,
+  .detail-dialog .detail-body>section{
+    min-width:0;
+    max-width:100%;
+  }
+  .detail-dialog .detail-top,
+  .detail-dialog .detail-body{grid-template-columns:minmax(0,1fr)}
+  .detail-dialog .detail-intro h2,
+  .detail-dialog .detail-ingredient-text,
+  .detail-dialog .step-copy{overflow-wrap:anywhere}
+  .detail-dialog .detail-alternative-select{display:block;min-width:0;max-width:100%}
+  .detail-dialog .detail-toolbar{gap:4px 8px;justify-content:flex-start}
+  .detail-dialog .detail-toolbar button{min-width:0}
+}
