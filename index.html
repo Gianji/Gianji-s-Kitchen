@@ -123,7 +123,24 @@
 
   <dialog id="detail-dialog" class="panel-dialog detail-dialog" aria-labelledby="detail-title"><div id="detail-content"></div></dialog>
 
-  <dialog id="settings-dialog" class="panel-dialog settings-dialog" aria-labelledby="settings-title"><div class="dialog-header"><div><div class="eyebrow">IL TUO ARCHIVIO</div><h2 id="settings-title">Sempre <em>con te.</em></h2></div><button type="button" class="icon-button close-dialog" data-close="settings-dialog" aria-label="Chiudi"><svg><use href="#i-close" /></svg></button></div><div class="settings-body"><div class="privacy-card"><span class="privacy-lock">✳</span><div><h3>Privato, per davvero.</h3><p>Le ricette e le foto vengono salvate esclusivamente nel browser di questo dispositivo, non su un server. Nessun account, nessuna condivisione automatica.</p></div></div><h3 class="settings-subhead">Il tuo backup</h3><p class="settings-copy">Esporta periodicamente una copia del ricettario. Se cambi iPhone, browser o cancelli i dati del sito, puoi ripristinarla importando il file.</p><button class="settings-action" id="export-data"><span class="action-icon"><svg><use href="#i-download" /></svg></span><span><strong>Esporta ricettario</strong><small>Scarica ricette e fotografie in un file JSON</small></span><svg class="action-arrow"><use href="#i-arrow" /></svg></button><button class="settings-action" id="import-data"><span class="action-icon"><svg><use href="#i-upload" /></svg></span><span><strong>Importa e unisci ricette</strong><small>Importa una singola ricetta JSON o un backup completo</small></span><svg class="action-arrow"><use href="#i-arrow" /></svg></button><input type="file" id="backup-file" accept="application/json,.json" hidden /><p class="settings-note">L'importazione aggiunge ciò che manca, ignora gli elementi identici e non sovrascrive mai le ricette già salvate. I dati restano soltanto su questo dispositivo.</p></div></dialog>
+  <dialog id="settings-dialog" class="panel-dialog settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-header"><div><div class="eyebrow">IL TUO ARCHIVIO</div><h2 id="settings-title">Sempre <em>con te.</em></h2></div><button type="button" class="icon-button close-dialog" data-close="settings-dialog" aria-label="Chiudi"><svg><use href="#i-close" /></svg></button></div>
+    <div class="settings-body">
+      <div class="privacy-card"><span class="privacy-lock">✳</span><div><h3>Privato, per davvero.</h3><p>Le ricette e le foto vengono salvate esclusivamente nel browser di questo dispositivo, non su un server. Nessun account, nessuna condivisione automatica.</p></div></div>
+      <h3 class="settings-subhead">Esportazione e importazione</h3>
+      <p class="settings-copy">Conserva una copia del ricettario in un file JSON. La puoi trasferire su un altro dispositivo o usare per un ripristino.</p>
+      <button class="settings-action" id="export-data"><span class="action-icon"><svg><use href="#i-download" /></svg></span><span><strong>Esportazione globale</strong><small>Scarica tutte le ricette, le foto e la lista della spesa</small></span><svg class="action-arrow"><use href="#i-arrow" /></svg></button>
+      <button class="settings-action" id="import-single"><span class="action-icon"><svg><use href="#i-upload" /></svg></span><span><strong>Importazione singola ricetta</strong><small>Aggiunge una ricetta JSON senza eliminare quelle esistenti</small></span><svg class="action-arrow"><use href="#i-arrow" /></svg></button>
+      <input type="file" id="single-recipe-file" accept="application/json,.json" hidden />
+      <div class="settings-risk-zone">
+        <p class="settings-risk-heading">ATTENZIONE · SOSTITUZIONE COMPLETA</p>
+        <button class="settings-action settings-action-danger" id="import-global"><span class="action-icon"><svg><use href="#i-upload" /></svg></span><span><strong>Importazione globale</strong><small>Cancella i dati attuali e li sostituisce con il backup selezionato</small></span><svg class="action-arrow"><use href="#i-arrow" /></svg></button>
+        <p class="settings-risk-copy">Tutte le ricette e la lista della spesa di questo browser verranno sostituite, anche se non sono presenti nel file. Prima esporta un backup globale. Ti chiederemo due conferme.</p>
+      </div>
+      <input type="file" id="global-backup-file" accept="application/json,.json" hidden />
+      <p class="settings-note">Per esportare una sola ricetta, aprila e usa “Esporta JSON” accanto a “Stampa”. I dati restano sul tuo dispositivo.</p>
+    </div>
+  </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>

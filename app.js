@@ -72,6 +72,34 @@
         tx.onabort = () => reject(tx.error);
       });
     },
+    async replaceAll(recipes,shopping) {
+      if (fallback) {
+        const recipeKey='mise-recipes-v1',shoppingKey='mise-shopping-v1';
+        const previousRecipes=localStorage.getItem(recipeKey),previousShopping=localStorage.getItem(shoppingKey);
+        try {
+          localStorage.setItem(recipeKey,JSON.stringify(recipes));
+          localStorage.setItem(shoppingKey,JSON.stringify(shopping));
+        } catch (error) {
+          try {
+            if(previousRecipes===null)localStorage.removeItem(recipeKey);else localStorage.setItem(recipeKey,previousRecipes);
+            if(previousShopping===null)localStorage.removeItem(shoppingKey);else localStorage.setItem(shoppingKey,previousShopping);
+          } catch (rollbackError) { console.error('Ripristino archivio locale non riuscito:',rollbackError); }
+          throw error;
+        }
+        return;
+      }
+      await new Promise((resolve,reject)=>{
+        // Entrambe le raccolte vengono sostituite nella stessa transazione: o tutte, o nessuna.
+        const tx=database.transaction([DB_STORE,DB_SHOPPING],'readwrite');
+        const recipeStore=tx.objectStore(DB_STORE),shoppingStore=tx.objectStore(DB_SHOPPING);
+        recipeStore.clear();shoppingStore.clear();
+        recipes.forEach(recipe=>recipeStore.put(recipe));
+        shopping.forEach(item=>shoppingStore.put(item));
+        tx.oncomplete=()=>resolve();
+        tx.onerror=()=>reject(tx.error||new Error('Ripristino non riuscito'));
+        tx.onabort=()=>reject(tx.error||new Error('Ripristino interrotto'));
+      });
+    },
     async shoppingAll() {
       if (fallback) { try { return JSON.parse(localStorage.getItem('mise-shopping-v1') || '[]'); } catch { return []; } }
       return this.transaction('readonly', os => os.getAll(),DB_SHOPPING);
@@ -320,7 +348,7 @@
     }).join('') || '<li><span>Non hai ancora inserito ingredienti.</span></li>';
     const steps=recipeSections(recipe).map((section,sIndex)=>`<div class="detail-prep-section"><div class="detail-prep-heading"><h4>${escapeHTML(section.title||`Fase ${sIndex+1}`)}</h4>${section.parallel?'<span class="parallel-badge">NEL FRATTEMPO</span>':''}</div><ol class="steps-list">${(section.steps||[]).map((step,index)=>`<li><span class="step-num">${String(index+1).padStart(2,'0')}</span><span class="step-copy">${escapeHTML(step)}</span></li>`).join('')}</ol></div>`).join('') || '<p>Nessun passaggio inserito.</p>';
     $('#detail-content').innerHTML=`<div class="detail-top"><div class="detail-cover">${photo?`<img src="${attr(photo)}" alt="${attr(recipe.title)}">`:'<span>m.</span>'}</div><div class="detail-intro"><div class="detail-category">${escapeHTML(recipe.category||'Altro')} · ${escapeHTML(recipe.difficulty||'Facile')}</div><h2 id="detail-title">${escapeHTML(recipe.title)}</h2><p>${escapeHTML(recipe.description||'Una ricetta del tuo ricettario personale.')}</p><div class="detail-meta"><span>${icon('clock')} ${duration(minutes(recipe))}</span><span>${icon('users')} ${Number(recipe.servings)||2} porzioni</span></div></div><button class="icon-button detail-close" data-detail-action="close" aria-label="Chiudi">${icon('close')}</button></div>
-    <div class="detail-toolbar"><button class="detail-fav ${recipe.favorite?'active':''}" data-detail-action="favorite">${icon('heart')} <span>${recipe.favorite?'Preferita':'Preferiti'}</span></button><button data-detail-action="edit">${icon('edit')} Modifica</button><button data-detail-action="print">${icon('print')} Stampa</button><span class="detail-spacer"></span><button class="danger" data-detail-action="delete">${icon('trash')} Elimina</button></div>
+    <div class="detail-toolbar"><button class="detail-fav ${recipe.favorite?'active':''}" data-detail-action="favorite">${icon('heart')} <span>${recipe.favorite?'Preferita':'Preferiti'}</span></button><button data-detail-action="edit">${icon('edit')} Modifica</button><button data-detail-action="print">${icon('print')} Stampa</button><button data-detail-action="export">${icon('download')} Esporta JSON</button><span class="detail-spacer"></span><button class="danger" data-detail-action="delete">${icon('trash')} Elimina</button></div>
     <div class="detail-body"><section><h3>Ingredienti</h3><div class="servings-control"><span>Adatta le quantità</span><div class="servings-stepper"><button data-servings="-1" aria-label="Diminuisci porzioni">−</button><strong>${state.servings}</strong><button data-servings="1" aria-label="Aumenta porzioni">+</button></div></div><button type="button" class="shop-all-button" data-detail-action="add-all">${icon('cart')} Aggiungi tutti alla spesa</button><ul class="ingredients-list">${ingredients}</ul></section><section><h3>Preparazione</h3>${steps}${recipe.notes?`<div class="detail-notes"><h4>Un piccolo appunto</h4><p>${escapeHTML(recipe.notes)}</p></div>`:''}${recipe.tags?.length?`<div class="detail-tags">${recipe.tags.map(tag=>`<span class="detail-tag"># ${escapeHTML(tag)}</span>`).join('')}</div>`:''}</section></div>`;
   }
   function openDetail(recipeId){
@@ -333,12 +361,26 @@
     try{await store.remove(recipe.id);closeDialog($('#detail-dialog'));state.detailId=null;await refresh();toast('Ricetta eliminata');}
     catch(e){console.error(e);toast('Impossibile eliminare la ricetta');}
   }
+  function downloadJSON(payload,filename){
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),20000);
+  }
+  function filenamePart(value){
+    return normalized(value).replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,65)||'ricetta';
+  }
+  function exportSingleRecipe(){
+    const recipe=getRecipe(state.detailId);if(!recipe)return;
+    try{
+      downloadJSON({application:'mise',version:1,exportedAt:new Date().toISOString(),recipe},`mise-${filenamePart(recipe.title)}.json`);
+      toast(`Esportata: ${recipe.title}`);
+    }catch(e){console.error(e);toast('Non è stato possibile esportare la ricetta');}
+  }
   async function exportBackup(){
     try{
       const archive={application:'mise',version:1,exportedAt:new Date().toISOString(),recipes:await store.all(),shopping:await store.shoppingAll()};
-      const blob=new Blob([JSON.stringify(archive,null,2)],{type:'application/json'});
-      const url=URL.createObjectURL(blob);const a=document.createElement('a');
-      a.href=url;a.download=`mise-ricettario-${new Date().toISOString().slice(0,10)}.json`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),20000);
+      downloadJSON(archive,`mise-ricettario-${new Date().toISOString().slice(0,10)}.json`);
       toast(`Backup pronto: ${archive.recipes.length} ricette`);
     }catch(e){console.error(e);toast('Non è stato possibile esportare il ricettario');}
   }
@@ -409,23 +451,41 @@
     }
     return {additions,skipped};
   }
-  async function importBackup(file){
+  async function importSingleRecipe(file){
     if(!file)return;
     if(file.size>90*1024*1024){toast('Il file è troppo grande (massimo 90 MB).');return;}
     try{
       const data=JSON.parse(await file.text());const records=validateImport(data);
-      if(!records.recipes.length&&!records.shopping.length){toast('Il file è vuoto');return;}
-      const currentRecipes=await store.all(),currentShopping=await store.shoppingAll();
+      if(records.recipes.length!==1)throw new Error('Per importare una ricetta, scegli un JSON che contenga esattamente una ricetta. Per un backup completo usa Importazione globale.');
+      const currentRecipes=await store.all();
       const recipeMerge=preserveExisting(records.recipes,currentRecipes,importSignature);
-      const shoppingMerge=preserveExisting(records.shopping,currentShopping,item=>JSON.stringify([normalized(item.name),item.qty,item.unit,item.source,item.checked]));
-      if(!recipeMerge.additions.length&&!shoppingMerge.additions.length){toast('Tutto già presente: nessuna ricetta sostituita');return;}
-      const parts=[`${recipeMerge.additions.length} ricette`,`${shoppingMerge.additions.length} prodotti della spesa`];
-      const duplicates=recipeMerge.skipped+shoppingMerge.skipped;
-      if(!window.confirm(`Aggiungere ${parts.join(' e ')} al tuo archivio?${duplicates?`\n${duplicates} elementi già presenti saranno ignorati.`:''}\nLe ricette e i prodotti attuali non verranno modificati.`))return;
-      await store.import(recipeMerge.additions);await store.shoppingBulkPut(shoppingMerge.additions);
-      await refresh();closeDialog($('#settings-dialog'));toast(`${recipeMerge.additions.length} ricette aggiunte, senza sovrascritture`);
+      if(!recipeMerge.additions.length){toast('Ricetta già presente: nessun dato modificato');return;}
+      if(!window.confirm(`Aggiungere “${recipeMerge.additions[0].title}” al tuo ricettario?\nNessuna ricetta esistente verrà modificata o eliminata.`))return;
+      await store.import(recipeMerge.additions);
+      await refresh();closeDialog($('#settings-dialog'));toast('Ricetta aggiunta, senza sovrascritture');
     }catch(e){console.error(e);toast(e instanceof SyntaxError?'Il file JSON non è leggibile':e.message||'Importazione non riuscita');}
-    finally{$('#backup-file').value='';}
+    finally{$('#single-recipe-file').value='';}
+  }
+  async function importGlobalBackup(file){
+    if(!file)return;
+    if(file.size>90*1024*1024){toast('Il file è troppo grande (massimo 90 MB).');return;}
+    try{
+      const data=JSON.parse(await file.text());
+      if(data?.application!=='mise'||data.version!==1||!Array.isArray(data.recipes)||!Array.isArray(data.shopping)){
+        throw new Error('Per sostituire l’archivio serve un backup globale Mise, con ricette e lista della spesa.');
+      }
+      const records=validateImport(data);
+      if(new Set(records.recipes.map(r=>r.id)).size!==records.recipes.length||new Set(records.shopping.map(s=>s.id)).size!==records.shopping.length){
+        throw new Error('Il backup contiene identificativi duplicati. Nessun dato è stato modificato.');
+      }
+      const currentRecipes=await store.all(),currentShopping=await store.shoppingAll();
+      if(!window.confirm(`ATTENZIONE: IMPORTAZIONE GLOBALE\n\nI dati presenti su questo dispositivo saranno eliminati e sostituiti da quelli del file.\n\nAttuali: ${currentRecipes.length} ricette e ${currentShopping.length} prodotti della spesa.\nNel file: ${records.recipes.length} ricette e ${records.shopping.length} prodotti.\n\nHai già esportato un backup dei tuoi dati attuali? Vuoi continuare?`))return;
+      if(!window.confirm('ULTIMA CONFERMA\n\nConfermi di voler CANCELLARE tutte le ricette e la lista della spesa attuali e sostituirle con il contenuto del file?\n\nQuesta operazione non può essere annullata senza un backup precedente.'))return;
+      await store.replaceAll(records.recipes,records.shopping);
+      await refresh();closeDialog($('#settings-dialog'));
+      toast(`Archivio sostituito: ${records.recipes.length} ricette importate`);
+    }catch(e){console.error(e);toast(e instanceof SyntaxError?'Il file JSON non è leggibile':e.message||'Importazione globale non riuscita');}
+    finally{$('#global-backup-file').value='';}
   }
 
   function wireEvents(){
@@ -469,6 +529,7 @@
       if(action==='favorite')await toggleFavorite(state.detailId);
       if(action==='edit'){const recipe=getRecipe(state.detailId);closeDialog($('#detail-dialog'));openEditor(recipe);}
       if(action==='print')window.print();
+      if(action==='export')exportSingleRecipe();
       if(action==='add-all')await addRecipeIngredients();
       if(action==='delete')await deleteRecipe();
     });
@@ -501,8 +562,10 @@
       catch(e){console.error(e);toast('Impossibile aggiornare la lista');}
     });
     $('#export-data').addEventListener('click',exportBackup);
-    $('#import-data').addEventListener('click',()=>$('#backup-file').click());
-    $('#backup-file').addEventListener('change',event=>importBackup(event.target.files?.[0]));
+    $('#import-single').addEventListener('click',()=>$('#single-recipe-file').click());
+    $('#single-recipe-file').addEventListener('change',event=>importSingleRecipe(event.target.files?.[0]));
+    $('#import-global').addEventListener('click',()=>$('#global-backup-file').click());
+    $('#global-backup-file').addEventListener('change',event=>importGlobalBackup(event.target.files?.[0]));
   }
   async function init(){
     $('#today-date').textContent=new Intl.DateTimeFormat('it-IT',{day:'2-digit',month:'long',year:'numeric'}).format(new Date());
