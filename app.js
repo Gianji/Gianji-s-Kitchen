@@ -492,7 +492,7 @@
 
   function wireEvents(){
     $$('[data-view]').forEach(button=>button.addEventListener('click',()=>setView(button.dataset.view)));
-    $('#logo-link').addEventListener('click',event=>{event.preventDefault();setView('all');window.scrollTo({top:0,behavior:'smooth'});});
+    ['logo-link','mobile-logo-link'].forEach(name=>$('#'+name).addEventListener('click',event=>{event.preventDefault();setView('all');window.scrollTo({top:0,behavior:'smooth'});}));
     ['hero-add','collection-add','empty-add','mobile-add'].forEach(name=>$('#'+name).addEventListener('click',()=>openEditor()));
     ['open-settings','open-settings-mobile'].forEach(name=>$('#'+name).addEventListener('click',()=>openDialog('#settings-dialog')));
     $('#search-input').addEventListener('input',event=>{state.query=event.target.value;render();});

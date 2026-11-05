@@ -61,3 +61,20 @@ dialog{border:0;padding:0;box-shadow:0 22px 90px rgba(18,27,18,.22);background:v
   .detail-dialog .detail-toolbar{gap:4px 8px;justify-content:flex-start}
   .detail-dialog .detail-toolbar button{min-width:0}
 }
+
+/* Identità Mise sempre visibile, anche quando la barra laterale è nascosta. */
+.topbar-leading{display:flex;align-items:center;gap:16px;min-width:0}
+.topbar-brand{display:none;text-decoration:none;color:var(--ink);white-space:nowrap}
+.topbar-brand span{color:#85966e}
+@media screen and (max-width:800px){
+  .topbar{height:72px}
+  .topbar-leading{gap:14px}
+  .topbar-brand{display:inline-block;font:italic 45px/1 var(--serif);letter-spacing:-.065em}
+  .topbar-prefix{display:none}
+  .topbar-label{font-size:9px;letter-spacing:.09em;line-height:1.25;min-width:0}
+}
+@media screen and (max-width:360px){
+  .topbar{padding-left:15px;padding-right:15px}
+  .topbar-leading{gap:10px}
+  .topbar-brand{font-size:41px}
+}
